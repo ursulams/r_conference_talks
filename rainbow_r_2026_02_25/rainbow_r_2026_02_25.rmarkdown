@@ -1,0 +1,231 @@
+---
+title:  "Elevating open data: 3D visuals of NYC open climate data with elevatr & rayshader"
+subtitle: The People's Beach at Riis
+author: Ursula Kaczmarek
+date: February 26, 2026
+date-format: long
+footer: <https://rainbowr.org>
+format:
+  rainbowrpres-revealjs: default
+code-block-height: 650px
+---
+
+```{r}
+#| include: FALSE
+#| fig-width: 8 
+#| fig-align: "center"
+pkgs <- c("tidyverse", "elevatr", "raster", "rayshader", "sf", "OpenStreetMap", "rgl")
+invisible(lapply(pkgs, library, character.only = TRUE))
+```
+
+## NYC’s queerest seaside destination\*
+
+::: aside
+\*so says thecut.com
+:::
+
+::::: {layout-ncol="2"}
+::: {.fragment .fade-in}
+![](images/milk_riis_beach.jpg){fig-align="left"}
+:::
+
+::: {.fragment .fade-in}
+![](images/colombia_riis_beach.png){fig-align="right"}
+:::
+:::::
+
+::: notes
+Since in the 1940s, Jacob Riis Beach has been an LGBTQ safe haven for queer beachgoers, holding gatherings such as memorials for Ms. Colombia, also known as Oswaldo Gomez, who is believed to have drowned nearby in 2018.
+:::
+
+## 
+
+::: {layout-ncol="2"}
+```{r}
+#| layout-ncol: 2
+#| echo: FALSE
+#| message: FALSE
+#| results: "hide"
+
+nyc_border <- st_read("nyc_border.geojson")
+inundation_border <- st_read("inundation_border.geojson")
+
+riis_coords <- c(-73.893936,40.557853,-73.857586,40.578100)
+peoples_beach_coords <-c(-73.865740,40.566350,-73.863155,40.567928)
+
+riis_map <- openproj(openmap(c(riis_coords[2], riis_coords[1]), c(riis_coords[4], riis_coords[3]), 
+                         zoom = 17, type = "esri-topo", mergeTiles = TRUE))
+
+nyc_coords <- c(-73.734005, 40.536253, -74.052729, 40.911159)
+nyc_map <- openproj(openmap(c(nyc_coords[2], nyc_coords[1]), c(nyc_coords[4], nyc_coords[3]), 
+                zoom = 10, type = "esri-shaded", mergeTiles = TRUE))
+
+autoplot.OpenStreetMap(nyc_map) +
+  annotate("point", color = "#e07a5f", alpha = 1, 
+        x = mean(c(riis_coords[1], riis_coords[3])),
+        y = mean(c(riis_coords[2], riis_coords[4]))) +
+  theme_void()
+
+autoplot.OpenStreetMap(riis_map, removeMargin = TRUE) +
+  annotate("rect", fill = "#e07a5f", alpha = 0.3, 
+        xmin = peoples_beach_coords[1], xmax = peoples_beach_coords[3],
+        ymin = peoples_beach_coords[2], ymax = peoples_beach_coords[4]) +
+  theme_void()
+```
+:::
+
+::: notes
+The beach was once shielded from the rest of the world by the hulking Neponsit Beach Hospital, which was opened in the early 1900s. It acted as a barrier between queer beachgoers and any disapproving, discriminatory glares from beyond the park’s boundaries, including park police
+:::
+
+## Subject to climate hazards and acute weather events
+
+::::: {layout-ncol="2"}
+::: {.fragment .fade-in}
+![](images/sandy_riis_beach.png){fig-align="left"}
+:::
+
+::: {.fragment .fade-in}
+![](images/erosion_riis_beach.jpg){fig-align="right"}
+:::
+:::::
+
+::: notes
+Significant beach erosion regularly closes sections of the beach. The Army Corps of Engineers is working with state and local authorites to implement a Storm Risk Reduction Project, including cyclical sand placement to replenish the beachfront. Superstorm Sandy made landfall in October of 2012.
+:::
+
+## Visualizing Sandy's storm surge with Rayshader
+
+[The inspo: Slicing through Monterey Bay: Creating 3D Maps with Rayshader](https://www.tylermw.com/posts/data_visualization/3d-maps-with-rayshader.html)
+
+![](nyc_inundation.gif)
+
+## Let's build {auto-animate="true"}
+
+```{r}
+#| echo: TRUE
+#| eval: FALSE
+#| message: FALSE
+#| code-line-numbers: "|1-2"
+
+nyc_border <- st_read("https://data.cityofnewyork.us/resource/wh2p-dxnf.geojson")
+inundation_border <- st_read("https://data.cityofnewyork.us/resource/5xsi-dfpx.geojson")
+
+# add topography limited to borders of city and inundation zone
+create_topo <- function(st, bbox, z_value) {
+  elev <- get_elev_raster(st, z = z_value) 
+  elev_masked <- mask(elev, bbox) # remove NAs to reduce matrix dims
+  st_matrix <- raster_to_matrix(elev_masked)
+  return(st_matrix)
+}
+
+nyc_matrix <- create_topo(nyc_border, nyc_border, 10)
+inundation_matrix <- create_topo(inundation_border, inundation_border, 10)
+
+zscale <- 10
+n_frames <- 150
+inundation_waterdepths <-  max(inundation_matrix, na.rm = TRUE)/2 - max(inundation_matrix, na.rm = TRUE)/2 * cos(seq(0,2*pi,length.out = n_frames))
+img_frames <- paste0("surge", seq_len(n_frames), ".png")
+for (i in seq_len(n_frames)) {
+  message(paste(" - image", i, "of", n_frames))
+  nyc_matrix |>
+    sphere_shade(texture = create_texture("#b7f4f5", "#4e3e42","#8a9299","#195f60","#c2d1ce"), zscale = zscale) |>
+    add_water(detect_water(nyc_matrix, cutoff = 1.3)) |>
+    add_shadow(ray_shade(nyc_matrix, zscale = zscale)) |>
+    plot_3d(heightmap = nyc_matrix,
+            zscale = zscale,
+            solid = FALSE,
+            shadow = TRUE,
+            water = TRUE,
+            watercolor =  "#3289a0",
+            theta = -5,
+            phi = 65,
+            zoom = 0.4,
+            windowsize = c(1200, 900)
+            )
+   render_water(inundation_matrix, waterdepth = inundation_waterdepths[i]/zscale,
+               watercolor ="#3289a0", zscale = zscale, remove_water = FALSE)
+  render_snapshot(img_frames[i])
+  rgl::clear3d()
+}
+
+magick::image_write_gif(magick::image_read(img_frames), 
+                       path = "nyc_inundation.gif", 
+                       delay = 5/n_frames)
+
+```
+
+## Just the beach
+
+![](riis_inundation.gif)
+
+## 
+
+```{r}
+#| echo: TRUE
+#| eval: FALSE
+#| message: FALSE
+#| code-line-numbers: "|3-6"
+
+nyc_border <- st_read("https://data.cityofnewyork.us/resource/wh2p-dxnf.geojson")
+inundation_border <- st_read("https://data.cityofnewyork.us/resource/5xsi-dfpx.geojson")
+
+# create bounding box to focus on the beach
+riis_coords <- c(-73.893936,40.557853,-73.857586,40.578100)
+names(riis_coords) = c("xmin", "ymin", "xmax", "ymax")
+riis_bbox <- st_bbox(riis_coords)
+riis_polygon <- st_as_sf(st_as_sfc(riis_bbox), crs = 4326)
+
+# add topography limited to borders of beach and inundation zone
+create_topo <- function(st, bbox, z_value) {
+  elev <- get_elev_raster(st,  z = z_value, src = "gl1") # requires OpenTopography API key (https://opentopography.org/developers)
+  elev <- crop(elev, bbox)
+  elev_masked <- mask(elev, bbox) # remove NAs to reduce matrix dims
+  st_matrix <- raster_to_matrix(elev_masked)
+  return(st_matrix)
+}
+
+# higher zoom value = higher resolution
+riis_matrix <- create_topo(nyc_border, riis_polygon, 14)
+inundation_matrix <- create_topo(inundation_border, riis_polygon, 14)
+
+
+zscale <- 10
+n_frames <- 75
+inundation_waterdepths <-  max(inundation_matrix, na.rm = TRUE) - max(inundation_matrix, na.rm = TRUE) * cos(seq(0,2*pi,length.out = n_frames))
+img_frames <- paste0("surge", seq_len(n_frames), ".png")
+
+for (i in seq_len(n_frames)) {
+  message(paste(" - image", i, "of", n_frames))
+  
+  riis_matrix |> 
+    sphere_shade(texture = "imhof3", zscale = zscale) |> 
+    add_water(detect_water(riis_matrix, cutoff = 1.3)) |>
+    add_shadow(ray_shade(riis_matrix, zscale = zscale)) |> 
+    plot_3d(heightmap = riis_matrix, 
+            zscale = zscale, 
+            solid = FALSE,
+            shadow = FALSE,
+            water = TRUE,
+            watercolor =  "#3289a0",
+            theta = -5, 
+            phi = 65
+    )
+render_water(inundation_matrix, waterdepth = inundation_waterdepths[i]/zscale,  
+    watercolor ="#3289a0", zscale = zscale, remove_water = FALSE)
+render_snapshot(img_frames[i])
+rgl::clear3d()
+}
+
+magick::image_write_gif(magick::image_read(img_frames), 
+                       path = "riis_inundation.gif", 
+                       delay = 5/n_frames)
+
+file.remove(list.files(pattern = "surge"))
+
+```
+
+## Thanks!
+
+https://github.com/ursulams/r_conference_talks/tree/main/rainbow_r_2026_02_25
+

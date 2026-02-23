@@ -1,0 +1,29 @@
+title: rainbowR presentation
+author: Ella Kaye
+version: 1.0.0
+quarto-required: ">=1.6.0"
+contributes:
+  formats:
+    common:
+      knitr:
+        opts_chunk:
+          warning: false
+          message: false
+          fig.align: "center"
+          fig.show: "hold"
+      execute:
+        echo: true
+        code-overflow: wrap
+    revealjs:
+      theme: [default, rainbowrpres.scss] 
+      highlight-style: rainbowr-light.theme
+      slide-number: true
+      callout-icon: true
+      title-slide-attributes:
+        data-background-color: "#000D33"
+      preview-links: auto
+      link-external-newwindow: true
+      width: 1280
+      height: 720
+      keep-md: false
+      embed-resources: true
